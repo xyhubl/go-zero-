@@ -44,7 +44,7 @@ type (
 
 		// 熔断方法, 执行请求时必须手动上报执行结果
 		// 适用于简单无需自定义快速失败, 无需自定义判定请求结果的场景 手动挡
-		Allow()
+		Allow() (Promise, error)
 
 		// 熔断方法, 自动上报结果 自动挡
 		Do(req func() error) error
@@ -53,22 +53,22 @@ type (
 		DoWithAcceptable(req func() error, acceptable Acceptable) error
 
 		// 熔断方法 支持自定义快速失败
-		DoWithFallback(req func() error, fallback func(err error) error) error
+		DoWithFallback(req func() error, fallback Fallback) error
 
 		// 熔断方法 支持自定义判定执行结果   支持自定义快速失败
-		DoWithFallbackAcceptable(req func() error, fallback func(err error) error, acceptable Acceptable) error
+		DoWithFallbackAcceptable(req func() error, fallback Fallback, acceptable Acceptable) error
 	}
 
 	throttle interface {
 		// 熔断
 		allow() (Promise, error)
 		// 熔断方法, DoXXX最终都是执行该方法
-		doReq(req func() error, fallback func(err error) error, acceptable Acceptable) error
+		doReq(req func() error, fallback Fallback, acceptable Acceptable) error
 	}
 
 	internalThrottle interface {
 		allow() (internalPromise, error)
-		doReq(req func() error, fallback func(err error) error, acceptable Acceptable) error
+		doReq(req func() error, fallback Fallback, acceptable Acceptable) error
 	}
 
 	// circuitBreaker 熔断器接口
@@ -89,7 +89,8 @@ func NewBreaker(opts ...Option) Breaker {
 	if len(b.name) == 0 {
 		b.name = stringx.Rand()
 	}
-	return nil
+	b.throttle = newLoggedThrottle(b.name, newGoogleBreaker())
+	return &b
 }
 
 func (cb *circuitBreaker) Name() string {

@@ -53,3 +53,62 @@ func (b *googleBreaker) history() (accepts, total int64) {
 	})
 	return
 }
+
+func (b *googleBreaker) allow() (internalPromise, error) {
+	if err := b.accept(); err != nil {
+		b.markFailure()
+		return nil, err
+	}
+
+	return googlePromise{
+		b: b,
+	}, nil
+}
+
+func (b *googleBreaker) doReq(req func() error, fallback Fallback, acceptable Acceptable) error {
+	if err := b.accept(); err != nil {
+		b.markFailure()
+		if fallback != nil {
+			return fallback(err)
+		}
+
+		return err
+	}
+
+	var success bool
+	defer func() {
+		// if req() panic, success is false, mark as failure
+		if success {
+			b.markSuccess()
+		} else {
+			b.markFailure()
+		}
+	}()
+
+	err := req()
+	if acceptable(err) {
+		success = true
+	}
+
+	return err
+}
+
+func (b *googleBreaker) markSuccess() {
+	b.stat.Add(1)
+}
+
+func (b *googleBreaker) markFailure() {
+	b.stat.Add(0)
+}
+
+type googlePromise struct {
+	b *googleBreaker
+}
+
+func (p googlePromise) Accept() {
+	p.b.markSuccess()
+}
+
+func (p googlePromise) Reject() {
+	p.b.markFailure()
+}
